@@ -3,9 +3,80 @@ import pandas as pd
 import numpy as np
 from datetime import date, timedelta
 import plotly.express as px
+import os # Import the os module to check for file existence
 
 # --- Configuration ---
 st.set_page_config(layout="wide", page_title="Fund Income & P&L Forecast")
+
+# --- Dummy Data Generation Functions (to prevent FileNotFoundError) ---
+# These functions create sample CSVs if they don't exist, making the app runnable.
+def create_dummy_portfolio_data(file_path="sample_portfolio.csv"):
+    if not os.path.exists(file_path):
+        st.warning(f"'{file_path}' not found. Creating dummy data.")
+        data = {
+            'Ticker': ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 'IBM', 'XOM', 'CVX'],
+            'Type': ['Equity', 'Equity', 'Equity', 'Equity', 'Equity', 'Equity', 'Equity', 'Equity'],
+            'Quantity': [100, 50, 75, 30, 20, 120, 80, 60],
+            'Purchase_Price': [150.00, 100.00, 250.00, 100.00, 200.00, 130.00, 90.00, 160.00]
+        }
+        df = pd.DataFrame(data)
+        df.to_csv(file_path, index=False)
+
+def create_dummy_historical_prices(file_path="sample_historical_prices.csv"):
+    if not os.path.exists(file_path):
+        st.warning(f"'{file_path}' not found. Creating dummy data.")
+        today = date.today()
+        dates = [today - timedelta(days=i) for i in range(30)] # Last 30 days
+        tickers = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'TSLA', 'IBM', 'XOM', 'CVX']
+        
+        data = []
+        for ticker in tickers:
+            base_price = np.random.uniform(50, 300)
+            for d in dates:
+                price = base_price * (1 + np.random.uniform(-0.02, 0.02)) # Add some variance
+                data.append({'Date': d.strftime('%Y-%m-%d'), 'Ticker': ticker, 'Close': price})
+        
+        df = pd.DataFrame(data)
+        df.to_csv(file_path, index=False)
+
+def create_dummy_bond_coupons(file_path="sample_bond_coupons.csv"):
+    if not os.path.exists(file_path):
+        st.warning(f"'{file_path}' not found. Creating dummy data.")
+        data = {
+            'Ticker': ['GOV1', 'CORP1', 'MUN1'],
+            'Payment_Date': [(date.today() + timedelta(days=30)).strftime('%Y-%m-%d'), 
+                             (date.today() + timedelta(days=90)).strftime('%Y-%m-%d'), 
+                             (date.today() + timedelta(days=180)).strftime('%Y-%m-%d')],
+            'Coupon_Amount': [5.00, 7.50, 3.25] # Coupon per bond, not total
+        }
+        df = pd.DataFrame(data)
+        df.to_csv(file_path, index=False)
+
+def create_dummy_equity_dividends(file_path="sample_equity_dividends.csv"):
+    if not os.path.exists(file_path):
+        st.warning(f"'{file_path}' not found. Creating dummy data.")
+        data = {
+            'Ticker': ['AAPL', 'MSFT', 'IBM'],
+            'Payment_Date': [(date.today() + timedelta(days=45)).strftime('%Y-%m-%d'), 
+                             (date.today() + timedelta(days=100)).strftime('%Y-%m-%d'), 
+                             (date.today() + timedelta(days=200)).strftime('%Y-%m-%d')],
+            'Dividend_Amount': [0.25, 0.62, 1.65] # Dividend per share
+        }
+        df = pd.DataFrame(data)
+        df.to_csv(file_path, index=False)
+
+def create_dummy_corporate_actions(file_path="sample_corporate_actions.csv"):
+    if not os.path.exists(file_path):
+        st.warning(f"'{file_path}' not found. Creating dummy data.")
+        data = {
+            'Ticker': ['TSLA', 'GOOGL'],
+            'Action_Type': ['Stock Split', 'Bond Call'], # Assuming 'Bond Call' for GOOGL for diversity
+            'Effective_Date': [(date.today() + timedelta(days=60)).strftime('%Y-%m-%d'), 
+                               (date.today() + timedelta(days=150)).strftime('%Y-%m-%d')],
+            'Details': ['3-for-1', '101.50'] # Example: 3-for-1 split, Bond called at 101.50
+        }
+        df = pd.DataFrame(data)
+        df.to_csv(file_path, index=False)
 
 # --- Data Loading Functions (with caching) ---
 @st.cache_data
@@ -44,7 +115,6 @@ def load_equity_dividends(file_path="sample_equity_dividends.csv"):
     """
     Loads future equity dividend payments.
     Converts the 'Payment_Date' column to datetime objects.
-    (Removed the duplicate pd.to_datetime(df) line)
     """
     df = pd.read_csv(file_path)
     df['Payment_Date'] = pd.to_datetime(df['Payment_Date']) # Convert 'Payment_Date' column to datetime
@@ -331,6 +401,13 @@ st.title("Fund Income Forecasting & P&L Analysis")
 # Sidebar for navigation and global settings
 st.sidebar.header("Navigation & Settings")
 page = st.sidebar.radio("Go to", ("Portfolio Overview", "Current P&L", "Future Projections & Scenarios", "Source Code")) # Corrected initialization of tuple
+
+# --- Ensure dummy data exists before attempting to load ---
+create_dummy_portfolio_data()
+create_dummy_historical_prices()
+create_dummy_bond_coupons()
+create_dummy_equity_dividends()
+create_dummy_corporate_actions()
 
 # Load all data once
 portfolio_df_initial = load_portfolio_data()

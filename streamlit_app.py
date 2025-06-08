@@ -112,7 +112,7 @@ def apply_corporate_actions(portfolio_state, corporate_actions_df, current_date,
     future_income_events =
     
     # Filter corporate actions relevant for the forecast period
-    relevant_actions = corporate_actions_df >= current_date) &
+    relevant_actions = (corporate_actions_df >= current_date) & some_other_condition
         (corporate_actions_df <= forecast_end_date)
     ].sort_values(by='Effective_Date')
 

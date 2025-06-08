@@ -79,55 +79,73 @@ def create_dummy_corporate_actions(file_path="sample_corporate_actions.csv"):
         df.to_csv(file_path, index=False)
 
 # --- Data Loading Functions (with caching) ---
+# Modified to accept an optional uploaded_file argument
 @st.cache_data
-def load_portfolio_data(file_path="sample_portfolio.csv"):
+def load_portfolio_data(file_path="sample_portfolio.csv", uploaded_file=None):
     """
     Loads portfolio holdings data.
-    Assumes no specific date column needs conversion across the whole DataFrame.
+    Prioritizes uploaded_file; falls back to file_path if not provided.
     """
-    df = pd.read_csv(file_path)
-    # If there was a 'Purchase_Date' column, you would convert it like:
-    # df['Purchase_Date'] = pd.to_datetime(df['Purchase_Date'])
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_csv(file_path)
     return df
 
 @st.cache_data
-def load_historical_prices(file_path="sample_historical_prices.csv"):
+def load_historical_prices(file_path="sample_historical_prices.csv", uploaded_file=None):
     """
     Loads historical prices data.
+    Prioritizes uploaded_file; falls back to file_path if not provided.
     Converts the 'Date' column to datetime objects.
     """
-    df = pd.read_csv(file_path)
-    df['Date'] = pd.to_datetime(df['Date']) # Convert 'Date' column to datetime
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_csv(file_path)
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce') # Use errors='coerce' for robustness
     return df
 
 @st.cache_data
-def load_bond_coupons(file_path="sample_bond_coupons.csv"):
+def load_bond_coupons(file_path="sample_bond_coupons.csv", uploaded_file=None):
     """
     Loads future bond coupon payments.
+    Prioritizes uploaded_file; falls back to file_path if not provided.
     Converts the 'Payment_Date' column to datetime objects.
     """
-    df = pd.read_csv(file_path)
-    df['Payment_Date'] = pd.to_datetime(df['Payment_Date']) # Convert 'Payment_Date' column to datetime
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_csv(file_path)
+    df['Payment_Date'] = pd.to_datetime(df['Payment_Date'], errors='coerce') # Use errors='coerce' for robustness
     return df
 
 @st.cache_data
-def load_equity_dividends(file_path="sample_equity_dividends.csv"):
+def load_equity_dividends(file_path="sample_equity_dividends.csv", uploaded_file=None):
     """
     Loads future equity dividend payments.
+    Prioritizes uploaded_file; falls back to file_path if not provided.
     Converts the 'Payment_Date' column to datetime objects.
     """
-    df = pd.read_csv(file_path)
-    df['Payment_Date'] = pd.to_datetime(df['Payment_Date']) # Convert 'Payment_Date' column to datetime
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_csv(file_path)
+    df['Payment_Date'] = pd.to_datetime(df['Payment_Date'], errors='coerce') # Use errors='coerce' for robustness
     return df
 
 @st.cache_data
-def load_corporate_actions(file_path="sample_corporate_actions.csv"):
+def load_corporate_actions(file_path="sample_corporate_actions.csv", uploaded_file=None):
     """
     Loads future corporate actions data.
+    Prioritizes uploaded_file; falls back to file_path if not provided.
     Converts the 'Effective_Date' column to datetime objects.
     """
-    df = pd.read_csv(file_path)
-    df['Effective_Date'] = pd.to_datetime(df['Effective_Date']) # Convert 'Effective_Date' column to datetime
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_csv(file_path)
+    df['Effective_Date'] = pd.to_datetime(df['Effective_Date'], errors='coerce') # Use errors='coerce' for robustness
     return df
 
 # --- Financial Calculation Functions ---
@@ -400,21 +418,30 @@ st.title("Fund Income Forecasting & P&L Analysis")
 
 # Sidebar for navigation and global settings
 st.sidebar.header("Navigation & Settings")
-page = st.sidebar.radio("Go to", ("Portfolio Overview", "Current P&L", "Future Projections & Scenarios", "Source Code")) # Corrected initialization of tuple
+page = st.sidebar.radio("Go to", ("Portfolio Overview", "Current P&L", "Future Projections & Scenarios", "Source Code"))
 
-# --- Ensure dummy data exists before attempting to load ---
+st.sidebar.header("Upload Your Data")
+# Add file uploader widgets for each data type
+uploaded_portfolio_file = st.sidebar.file_uploader("Upload Portfolio Data (CSV)", type=["csv"], key="portfolio_uploader")
+uploaded_prices_file = st.sidebar.file_uploader("Upload Historical Prices (CSV)", type=["csv"], key="prices_uploader")
+uploaded_bond_coupons_file = st.sidebar.file_uploader("Upload Bond Coupons (CSV)", type=["csv"], key="bond_coupons_uploader")
+uploaded_equity_dividends_file = st.sidebar.file_uploader("Upload Equity Dividends (CSV)", type=["csv"], key="equity_dividends_uploader")
+uploaded_corporate_actions_file = st.sidebar.file_uploader("Upload Corporate Actions (CSV)", type=["csv"], key="corporate_actions_uploader")
+
+
+# --- Ensure dummy data exists before attempting to load (important for first run) ---
 create_dummy_portfolio_data()
 create_dummy_historical_prices()
 create_dummy_bond_coupons()
 create_dummy_equity_dividends()
 create_dummy_corporate_actions()
 
-# Load all data once
-portfolio_df_initial = load_portfolio_data()
-historical_prices_df = load_historical_prices()
-bond_coupons_df = load_bond_coupons()
-equity_dividends_df = load_equity_dividends()
-corporate_actions_df = load_corporate_actions()
+# Load all data once, passing uploaded files if available
+portfolio_df_initial = load_portfolio_data(uploaded_file=uploaded_portfolio_file)
+historical_prices_df = load_historical_prices(uploaded_file=uploaded_prices_file)
+bond_coupons_df = load_bond_coupons(uploaded_file=uploaded_bond_coupons_file)
+equity_dividends_df = load_equity_dividends(uploaded_file=uploaded_equity_dividends_file)
+corporate_actions_df = load_corporate_actions(uploaded_file=uploaded_corporate_actions_file)
 
 # Get latest prices for current P&L
 # Get the latest date from the 'Date' column of historical_prices_df
@@ -530,4 +557,3 @@ elif page == "Source Code":
     with open("streamlit_app.py", "r") as f: 
         code = f.read()
     st.code(code, language="python")
-

@@ -311,7 +311,14 @@ def forecast_income_and_pnl(portfolio_df, historical_prices_df, bond_coupons_df,
     This is a simplified projection.
     """
     # Get the latest date from historical prices for current_date
-    current_date = historical_prices_df['Date'].max()
+    # FIX: Robustly get current_date in case historical_prices_df is empty
+    if not historical_prices_df.empty and 'Date' in historical_prices_df.columns and not historical_prices_df['Date'].empty:
+        current_date = historical_prices_df['Date'].max()
+    else:
+        st.warning("Historical prices data is empty or missing 'Date' column. Using today's date as current date.")
+        current_date = date.today() # Fallback to today's date
+
+
     forecast_end_date = current_date + timedelta(days=forecast_horizon_days)
 
     # Apply corporate actions to get an adjusted portfolio for future projections
@@ -378,7 +385,13 @@ def forecast_income_and_pnl(portfolio_df, historical_prices_df, bond_coupons_df,
                 'Amount': total_dividend_amount
             })
 
-    projected_income_df = pd.DataFrame(projected_income).sort_values(by='Date').reset_index(drop=True)
+    # FIX: Robustly create and sort projected_income_df
+    projected_income_df = pd.DataFrame(projected_income)
+    if not projected_income_df.empty:
+        projected_income_df = projected_income_df.sort_values(by='Date').reset_index(drop=True)
+    else:
+        # Ensure the DataFrame has the expected columns even if empty, for consistency downstream
+        projected_income_df = pd.DataFrame(columns=['Date', 'Ticker', 'Type', 'Amount'])
     
     # --- Future P&L Calculation (Simplified) ---
     # For simplicity, we'll assume future prices are the latest current prices,
@@ -618,8 +631,12 @@ corporate_actions_df = load_corporate_actions(uploaded_file=uploaded_corporate_a
 
 # Get latest prices for current P&L
 # Get the latest date from the 'Date' column of historical_prices_df
-latest_prices = get_latest_prices(historical_prices_df)
-current_date = historical_prices_df['Date'].max()
+# FIX: Robustly get current_date in case historical_prices_df is empty
+if not historical_prices_df.empty and 'Date' in historical_prices_df.columns and not historical_prices_df['Date'].empty:
+    current_date = historical_prices_df['Date'].max()
+else:
+    st.warning("Historical prices data is empty or missing 'Date' column. Using today's date as current date.")
+    current_date = date.today() # Fallback to today's date
 
 # Initialize session state variables for P&L forecast results
 if 'projected_income_df' not in st.session_state:

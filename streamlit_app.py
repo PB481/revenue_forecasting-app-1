@@ -51,7 +51,7 @@ def get_latest_prices(historical_prices_df):
     if historical_prices_df.empty:
         return pd.DataFrame(columns=)
     latest_date = historical_prices_df.max()
-    latest_prices = historical_prices_df == latest_date].set_index('Ticker')['Close']
+    latest_prices = historical_prices_df[historical_prices_df['Date'] == latest_date].set_index('Ticker')['Close']
     return latest_prices.to_dict()
 
 def calculate_current_pnl(portfolio_df, latest_prices):

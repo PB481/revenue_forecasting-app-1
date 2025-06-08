@@ -4,6 +4,8 @@ import numpy as np
 from datetime import date, timedelta
 import plotly.express as px
 import os # Import the os module to check for file existence
+import json # For handling LLM JSON responses
+import base64 # For encoding download links
 
 # --- Configuration ---
 st.set_page_config(layout="wide", page_title="Fund Income & P&L Forecast")
@@ -413,12 +415,183 @@ def forecast_income_and_pnl(portfolio_df, historical_prices_df, bond_coupons_df,
 
     return projected_income_df, total_future_pnl, adjusted_portfolio_for_forecast, ca_impact_events
 
+# --- Helper function to generate HTML report ---
+def generate_pnl_report_html(current_pnl_df, total_unrealized_pnl, total_market_value, total_cost_basis, 
+                                 projected_income_df, total_future_pnl, ca_impact_events, current_date, forecast_horizon_months):
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Fund P&L Report</title>
+        <style>
+            body {{ font-family: 'Inter', sans-serif; margin: 20px; color: #333; background-color: #f8f9fa; }}
+            .container {{ max-width: 1000px; margin: auto; padding: 20px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
+            h1, h2, h3 {{ color: #0056b3; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; margin-top: 30px; }}
+            .metric-container {{ display: flex; justify-content: space-around; flex-wrap: wrap; margin-bottom: 20px; }}
+            .metric-box {{ background-color: #e0f2f7; border-radius: 8px; padding: 15px 20px; margin: 10px; flex: 1; min-width: 250px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }}
+            .metric-value {{ font-size: 1.8em; font-weight: bold; color: #007bff; }}
+            .metric-label {{ font-size: 0.9em; color: #555; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 20px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }}
+            th, td {{ border: 1px solid #dee2e6; padding: 12px 15px; text-align: left; }}
+            th {{ background-color: #007bff; color: white; font-weight: 600; }}
+            tr:nth-child(even) {{ background-color: #f2f2f2; }}
+            tr:hover {{ background-color: #e9ecef; }}
+            .info-box {{ background-color: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #bee5eb; }}
+            .warning-box {{ background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 8px; margin-top: 15px; border: 1px solid #ffeeba; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Fund P&L Report</h1>
+            <p>Report Date: {date.today().strftime('%Y-%m-%d')}</p>
+            <p>Data as of: {current_date.strftime('%Y-%m-%d')}</p>
+
+            <h2>Current Fund P&L Summary</h2>
+            <div class="metric-container">
+                <div class="metric-box">
+                    <div class="metric-value">${total_cost_basis:,.2f}</div>
+                    <div class="metric-label">Total Cost Basis</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value">${total_market_value:,.2f}</div>
+                    <div class="metric-label">Total Market Value</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-value">${total_unrealized_pnl:,.2f}</div>
+                    <div class="metric-label">Total Unrealized P&L</div>
+                </div>
+            </div>
+
+            <h3>Individual Position P&L (Current)</h3>
+            {current_pnl_df.to_html(classes='table', index=False)}
+
+            <h2>Future Projections for next {forecast_horizon_months} months</h2>
+            <div class="metric-container">
+                <div class="metric-box">
+                    <div class="metric-value">${projected_income_df['Amount'].sum():,.2f}</div>
+                    <div class="metric-label">Total Projected Income</div>
+                </div>
+                 <div class="metric-box">
+                    <div class="metric-value">${total_future_pnl:,.2f}</div>
+                    <div class="metric-label">Total Future P&L (Simplified)</div>
+                </div>
+            </div>
+            <p class="info-box">Note: Future P&L is a simplified projection. Future prices are assumed to be the latest current prices, adjusted for corporate actions.</p>
+
+            <h3>Projected Income Events</h3>
+            {projected_income_df.to_html(classes='table', index=False)}
+
+            <h3>Corporate Action Impacts During Forecast Period</h3>
+            {ca_impact_events.to_html(classes='table', index=False) if not ca_impact_events.empty else '<p class="info-box">No corporate actions impacting the portfolio found within the forecast horizon.</p>'}
+
+        </div>
+    </body>
+    </html>
+    """
+    return html_content
+
+# --- Helper function to generate code explanation using LLM ---
+async def generate_code_explanation_html(code_string):
+    prompt = f"""
+    You are an expert Python programmer and technical writer.
+    Provide a detailed, line-by-line explanation for the following Python Streamlit code.
+    For each line, explain its purpose and how it contributes to the overall application.
+    Format the output as an HTML document with a title, a brief introduction, and then
+    a section for each major function or block of code.
+    Inside each section, use a table or a clear list structure where each row/item
+    shows the line number, the code, and its explanation.
+    Ensure the HTML is well-structured and uses clear headings and paragraphs.
+
+    The code is:
+    ```python
+    {code_string}
+    ```
+
+    Structure your HTML as follows:
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Code Explanation</title>
+        <style>
+            body {{ font-family: 'Inter', sans-serif; margin: 20px; background-color: #f8f9fa; color: #333; }}
+            .container {{ max-width: 900px; margin: auto; padding: 25px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }}
+            h1, h2, h3 {{ color: #0056b3; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; margin-top: 30px; }}
+            .intro {{ margin-bottom: 20px; line-height: 1.6; }}
+            .code-block {{ background-color: #e9ecef; border-radius: 8px; padding: 15px; overflow-x: auto; font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 0.9em; line-height: 1.4; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 15px; border-radius: 8px; overflow: hidden; }}
+            th, td {{ border: 1px solid #dee2e6; padding: 10px 12px; text-align: left; vertical-align: top; }}
+            th {{ background-color: #007bff; color: white; font-weight: 600; }}
+            tr:nth-child(even) {{ background-color: #f2f2f2; }}
+            tr:hover {{ background-color: #e9ecef; }}
+            .line-num {{ font-weight: bold; color: #6c757d; width: 5%; }}
+            .code-line {{ font-family: 'Fira Code', 'Cascadia Code', monospace; background-color: #f2f2f2; padding: 2px 5px; border-radius: 4px; display: inline-block; white-space: pre-wrap; word-break: break-all; max-width: 35%; box-sizing: border-box;}}
+            .explanation {{ max-width: 60%; box-sizing: border-box;}}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Python Code Explanation</h1>
+            <p class="intro">This document provides a line-by-line explanation of the Streamlit application code, detailing the purpose and functionality of each part.</p>
+            <!-- Content will be inserted here by the LLM -->
+        </div>
+    </body>
+    </html>
+    """
+
+    # Calling the LLM to generate the explanation
+    import requests # Using requests for direct HTTP call as st.experimental_connection is for data sources
+    
+    # This apiKey will be provided by the Canvas runtime
+    api_key = "" 
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        "contents": [
+            {
+                "role": "user",
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "responseMimeType": "text/html" # Request HTML output
+        }
+    }
+
+    try:
+        response = requests.post(api_url, headers=headers, data=json.dumps(payload))
+        response.raise_for_status() # Raise an exception for HTTP errors
+        
+        result = response.json()
+        if result.get("candidates") and result["candidates"][0].get("content") and result["candidates"][0]["content"].get("parts"):
+            llm_html_content = result["candidates"][0]["content"]["parts"][0]["text"]
+            # The LLM will generate the <h1> and <p class="intro"> and the rest of the HTML body content.
+            # We will ensure the LLM's response is directly usable within the main HTML structure.
+            return llm_html_content
+        else:
+            st.error("LLM did not return expected content structure.")
+            return "<html><body><h1>Error generating explanation.</h1><p>LLM response was empty or malformed.</p></body></html>"
+    except requests.exceptions.RequestException as e:
+        st.error(f"Failed to connect to LLM API: {e}")
+        return f"<html><body><h1>Error generating explanation.</h1><p>Network or API issue: {e}</p></body></html>"
+    except json.JSONDecodeError as e:
+        st.error(f"Failed to parse LLM response JSON: {e}")
+        return f"<html><body><h1>Error generating explanation.</h1><p>Invalid JSON from LLM: {e}</p></body></html>"
+    except Exception as e:
+        st.error(f"An unexpected error occurred during LLM call: {e}")
+        return f"<html><body><h1>Error generating explanation.</h1><p>Unexpected error: {e}</p></body></html>"
+
+
 # --- Streamlit UI ---
 st.title("Fund Income Forecasting & P&L Analysis")
 
 # Sidebar for navigation and global settings
 st.sidebar.header("Navigation & Settings")
-page = st.sidebar.radio("Go to", ("Portfolio Overview", "Current P&L", "Future Projections & Scenarios", "Source Code"))
+page = st.sidebar.radio("Go to", ("Portfolio Overview", "Current P&L", "Future Projections & Scenarios", "P&L Analysis & Reporting", "Source Code"))
 
 st.sidebar.header("Upload Your Data")
 # Add file uploader widgets for each data type
@@ -448,6 +621,23 @@ corporate_actions_df = load_corporate_actions(uploaded_file=uploaded_corporate_a
 latest_prices = get_latest_prices(historical_prices_df)
 current_date = historical_prices_df['Date'].max()
 
+# Initialize session state variables for P&L forecast results
+if 'projected_income_df' not in st.session_state:
+    st.session_state.projected_income_df = pd.DataFrame(columns=['Date', 'Ticker', 'Type', 'Amount'])
+if 'total_future_pnl' not in st.session_state:
+    st.session_state.total_future_pnl = 0.0
+if 'ca_impact_events' not in st.session_state:
+    st.session_state.ca_impact_events = pd.DataFrame(columns=['Date', 'Ticker', 'Event', 'Impact'])
+if 'total_unrealized_pnl' not in st.session_state:
+    st.session_state.total_unrealized_pnl = 0.0
+if 'total_market_value' not in st.session_state:
+    st.session_state.total_market_value = 0.0
+if 'total_cost_basis' not in st.session_state:
+    st.session_state.total_cost_basis = 0.0
+if 'forecast_horizon_months_last_run' not in st.session_state:
+    st.session_state.forecast_horizon_months_last_run = 0
+
+# --- Page Logic ---
 if page == "Portfolio Overview":
     st.header("Current Portfolio Holdings")
     st.write(f"Data as of: **{current_date.strftime('%Y-%m-%d')}**")
@@ -467,6 +657,10 @@ elif page == "Current P&L":
 
     current_pnl_df, total_unrealized_pnl, total_market_value, total_cost_basis = calculate_current_pnl(portfolio_df_initial, latest_prices)
     
+    st.session_state.total_unrealized_pnl = total_unrealized_pnl
+    st.session_state.total_market_value = total_market_value
+    st.session_state.total_cost_basis = total_cost_basis
+
     st.subheader("Individual Position P&L")
     st.dataframe(current_pnl_df, use_container_width=True)
 
@@ -482,8 +676,9 @@ elif page == "Future Projections & Scenarios":
     st.write(f"Current Date: **{current_date.strftime('%Y-%m-%d')}**")
 
     st.subheader("Projection Settings")
-    forecast_horizon_months = st.slider("Forecast Horizon (Months)", 1, 24, 12)
+    forecast_horizon_months = st.slider("Forecast Horizon (Months)", 1, 24, st.session_state.get('forecast_horizon_months_last_run', 12))
     forecast_horizon_days = forecast_horizon_months * 30 # Approximate days
+    st.session_state.forecast_horizon_months_last_run = forecast_horizon_months # Store for P&L analysis page
 
     st.subheader("Corporate Actions for Scenario Testing")
     st.write("You can edit the corporate actions below to test different scenarios (e.g., remove an action to simulate it not occurring).")
@@ -504,9 +699,6 @@ elif page == "Future Projections & Scenarios":
         st.subheader(f"Forecasted Income & P&L for next {forecast_horizon_months} months")
         
         # Ensure dates are datetime objects after editing by the user in data_editor
-        # This assumes the user inputs dates in a format pandas can parse.
-        # It's better to explicitly map specific columns if there's a mix of data types
-        # For example: edited_ca_df['Effective_Date'] = pd.to_datetime(edited_ca_df['Effective_Date'], errors='coerce')
         for col in edited_ca_df.select_dtypes(include=['object']).columns:
              try:
                  edited_ca_df[col] = pd.to_datetime(edited_ca_df[col], errors='coerce')
@@ -523,6 +715,12 @@ elif page == "Future Projections & Scenarios":
                 forecast_horizon_days
             )
         
+        # Store results in session state for P&L Analysis page
+        st.session_state.projected_income_df = projected_income_df
+        st.session_state.total_future_pnl = total_future_pnl
+        st.session_state.ca_impact_events = ca_impact_events
+        st.session_state.adjusted_portfolio_after_ca = adjusted_portfolio_after_ca # Store for potential future use
+
         st.write("### Corporate Action Impacts During Forecast Period")
         if not ca_impact_events.empty:
             st.dataframe(ca_impact_events.style.format({'Date': lambda x: x.strftime('%Y-%m-%d')}), use_container_width=True)
@@ -549,6 +747,59 @@ elif page == "Future Projections & Scenarios":
         st.info(f"This is a simplified projection. Future prices are assumed to be the latest current prices, adjusted for corporate actions. A full model would include price forecasting and fund expenses.")
         st.metric("Total Future P&L", f"${total_future_pnl:,.2f}")
 
+elif page == "P&L Analysis & Reporting":
+    st.header("P&L Analysis and HTML Report Generation")
+    st.write(f"Current Date: **{current_date.strftime('%Y-%m-%d')}**")
+
+    current_pnl_df, _, _, _ = calculate_current_pnl(portfolio_df_initial, latest_prices) # Recalculate current P&L for display
+
+    st.subheader("Current Fund P&L Summary")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Cost Basis", f"${st.session_state.total_cost_basis:,.2f}")
+    col2.metric("Total Market Value", f"${st.session_state.total_market_value:,.2f}")
+    col3.metric("Total Unrealized P&L", f"${st.session_state.total_unrealized_pnl:,.2f}",
+                delta=f"{st.session_state.total_unrealized_pnl/st.session_state.total_cost_basis:.2%}" if st.session_state.total_cost_basis else "0.00%")
+    
+    st.subheader("Future Projection Summary")
+    if not st.session_state.projected_income_df.empty:
+        st.metric(f"Total Projected Income (for {st.session_state.forecast_horizon_months_last_run} months)", 
+                  f"${st.session_state.projected_income_df['Amount'].sum():,.2f}")
+    else:
+        st.info("No projected income events from the last forecast. Run 'Future Projections & Scenarios' first.")
+    
+    st.metric(f"Total Future P&L (for {st.session_state.forecast_horizon_months_last_run} months, simplified)", 
+              f"${st.session_state.total_future_pnl:,.2f}")
+
+    st.write("---")
+    st.subheader("Generate P&L Report (HTML)")
+
+    # Ensure all data for the report is available
+    if not current_pnl_df.empty and not st.session_state.projected_income_df.empty:
+        # Generate HTML content
+        report_html = generate_pnl_report_html(
+            current_pnl_df, 
+            st.session_state.total_unrealized_pnl, 
+            st.session_state.total_market_value, 
+            st.session_state.total_cost_basis,
+            st.session_state.projected_income_df, 
+            st.session_state.total_future_pnl, 
+            st.session_state.ca_impact_events,
+            current_date,
+            st.session_state.forecast_horizon_months_last_run
+        )
+        
+        # Create a download button for the HTML report
+        st.download_button(
+            label="Download P&L Report as HTML",
+            data=report_html,
+            file_name="fund_pnl_report.html",
+            mime="text/html",
+            help="Download a detailed HTML report of current and projected P&L, including scenario testing results."
+        )
+    else:
+        st.warning("Please run a projection in the 'Future Projections & Scenarios' tab first to generate data for the report.")
+
+
 elif page == "Source Code":
     st.header("Application Source Code")
     st.write("Here you can view the Python source code for this Streamlit application.")
@@ -557,3 +808,22 @@ elif page == "Source Code":
     with open("streamlit_app.py", "r") as f: 
         code = f.read()
     st.code(code, language="python")
+
+    st.subheader("Generate Code Explanation")
+    st.write("Click the button below to generate an HTML document outlining each line of code and its purpose using an LLM.")
+
+    if st.button("Generate Code Explanation (HTML)"):
+        with st.spinner("Generating detailed code explanation (this might take a minute or two)..."):
+            # Call the async function and await its result
+            import asyncio
+            explanation_html = asyncio.run(generate_code_explanation_html(code))
+            
+            # Provide a download button for the generated HTML explanation
+            st.download_button(
+                label="Download Code Explanation as HTML",
+                data=explanation_html,
+                file_name="streamlit_app_code_explanation.html",
+                mime="text/html",
+                help="Download an HTML document explaining each line of the application's source code."
+            )
+            st.success("Code explanation generated successfully!")

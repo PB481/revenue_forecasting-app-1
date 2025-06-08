@@ -153,17 +153,40 @@ def load_corporate_actions(file_path="sample_corporate_actions.csv", uploaded_fi
 # --- Financial Calculation Functions ---
 
 def get_latest_prices(historical_prices_df):
-    """Gets the latest closing price for each ticker."""
-    if historical_prices_df.empty:
-        # Correctly initialize an empty DataFrame with expected columns
-        return pd.DataFrame(columns=['Ticker', 'Close'])
-    
-    # Get the latest date from the 'Date' column
+    """
+    Gets the latest closing price for each ticker.
+    Ensures a dictionary is always returned.
+    """
+    # Ensure 'Date' column exists and is not empty before proceeding
+    if historical_prices_df.empty or 'Date' not in historical_prices_df.columns or historical_prices_df['Date'].empty:
+        return {} # Return an empty dictionary if no valid data
+
+    # Ensure 'Date' column is datetime type
+    # This conversion is already done in load_historical_prices, but a defensive check
+    # can help if data types somehow change or are inconsistent after initial load/caching.
+    if not pd.api.types.is_datetime64_any_dtype(historical_prices_df['Date']):
+        historical_prices_df['Date'] = pd.to_datetime(historical_prices_df['Date'], errors='coerce')
+        # Drop rows where date conversion failed and then re-check if empty
+        historical_prices_df.dropna(subset=['Date'], inplace=True)
+        if historical_prices_df.empty or historical_prices_df['Date'].empty:
+            return {} # Return empty dict if all dates were invalid
+
     latest_date = historical_prices_df['Date'].max()
     
-    # Filter for the latest date and set 'Ticker' as index to get a Series of prices
-    latest_prices = historical_prices_df[historical_prices_df['Date'] == latest_date].set_index('Ticker')['Close']
-    return latest_prices.to_dict()
+    # Filter for the latest date
+    latest_prices_filtered = historical_prices_df[historical_prices_df['Date'] == latest_date]
+
+    if latest_prices_filtered.empty:
+        return {} # Return empty dictionary if no data for the latest date found
+
+    # Ensure 'Ticker' and 'Close' columns exist
+    if 'Ticker' not in latest_prices_filtered.columns or 'Close' not in latest_prices_filtered.columns:
+        st.warning("Historical prices data missing 'Ticker' or 'Close' column for latest prices.")
+        return {}
+
+    # Set 'Ticker' as index and extract 'Close' prices into a dictionary
+    latest_prices_dict = latest_prices_filtered.set_index('Ticker')['Close'].to_dict()
+    return latest_prices_dict
 
 def calculate_current_pnl(portfolio_df, latest_prices):
     """Calculates current (realized and unrealized) P&L."""
@@ -665,7 +688,9 @@ if page == "Portfolio Overview":
 
     st.subheader("Latest Market Prices")
     # Correctly initialize DataFrame for latest prices
-    latest_prices_df = pd.DataFrame(latest_prices.items(), columns=['Ticker', 'Latest Price'])
+    # FIX: Ensure latest_prices is always a dictionary before calling .items()
+    latest_prices_dict_for_df = get_latest_prices(historical_prices_df)
+    latest_prices_df = pd.DataFrame(latest_prices_dict_for_df.items(), columns=['Ticker', 'Latest Price'])
     st.dataframe(latest_prices_df.style.format({'Latest Price': "{:,.2f}"}), use_container_width=True)
 
 elif page == "Current P&L":

@@ -10,38 +10,54 @@ st.set_page_config(layout="wide", page_title="Fund Income & P&L Forecast")
 # --- Data Loading Functions (with caching) ---
 @st.cache_data
 def load_portfolio_data(file_path="sample_portfolio.csv"):
-    """Loads portfolio holdings data."""
+    """
+    Loads portfolio holdings data.
+    Assumes no specific date column needs conversion across the whole DataFrame.
+    """
     df = pd.read_csv(file_path)
-    df = pd.to_datetime(df)
+    # If there was a 'Purchase_Date' column, you would convert it like:
+    # df['Purchase_Date'] = pd.to_datetime(df['Purchase_Date'])
     return df
 
 @st.cache_data
 def load_historical_prices(file_path="sample_historical_prices.csv"):
-    """Loads historical prices data."""
+    """
+    Loads historical prices data.
+    Converts the 'Date' column to datetime objects.
+    """
     df = pd.read_csv(file_path)
-    df = pd.to_datetime(df)
+    df['Date'] = pd.to_datetime(df['Date']) # Convert 'Date' column to datetime
     return df
 
 @st.cache_data
 def load_bond_coupons(file_path="sample_bond_coupons.csv"):
-    """Loads future bond coupon payments."""
+    """
+    Loads future bond coupon payments.
+    Converts the 'Payment_Date' column to datetime objects.
+    """
     df = pd.read_csv(file_path)
-    df = pd.to_datetime(df)
+    df['Payment_Date'] = pd.to_datetime(df['Payment_Date']) # Convert 'Payment_Date' column to datetime
     return df
 
 @st.cache_data
 def load_equity_dividends(file_path="sample_equity_dividends.csv"):
-    """Loads future equity dividend payments."""
+    """
+    Loads future equity dividend payments.
+    Converts the 'Payment_Date' column to datetime objects.
+    (Removed the duplicate pd.to_datetime(df) line)
+    """
     df = pd.read_csv(file_path)
-    df = pd.to_datetime(df)
-    df = pd.to_datetime(df)
+    df['Payment_Date'] = pd.to_datetime(df['Payment_Date']) # Convert 'Payment_Date' column to datetime
     return df
 
 @st.cache_data
 def load_corporate_actions(file_path="sample_corporate_actions.csv"):
-    """Loads future corporate actions data."""
+    """
+    Loads future corporate actions data.
+    Converts the 'Effective_Date' column to datetime objects.
+    """
     df = pd.read_csv(file_path)
-    df = pd.to_datetime(df)
+    df['Effective_Date'] = pd.to_datetime(df['Effective_Date']) # Convert 'Effective_Date' column to datetime
     return df
 
 # --- Financial Calculation Functions ---
@@ -49,20 +65,26 @@ def load_corporate_actions(file_path="sample_corporate_actions.csv"):
 def get_latest_prices(historical_prices_df):
     """Gets the latest closing price for each ticker."""
     if historical_prices_df.empty:
-        return pd.DataFrame(columns=)
-    latest_date = historical_prices_df.max()
+        # Correctly initialize an empty DataFrame with expected columns
+        return pd.DataFrame(columns=['Ticker', 'Close'])
+    
+    # Get the latest date from the 'Date' column
+    latest_date = historical_prices_df['Date'].max()
+    
+    # Filter for the latest date and set 'Ticker' as index to get a Series of prices
     latest_prices = historical_prices_df[historical_prices_df['Date'] == latest_date].set_index('Ticker')['Close']
     return latest_prices.to_dict()
 
 def calculate_current_pnl(portfolio_df, latest_prices):
     """Calculates current (realized and unrealized) P&L."""
-    pnl_data =
+    pnl_data = [] # Correctly initialize an empty list
     total_unrealized_pnl = 0.0
     total_market_value = 0.0
     total_cost_basis = 0.0
 
     for index, row in portfolio_df.iterrows():
-        ticker = row
+        # Access columns using dictionary-like keys
+        ticker = row['Ticker'] 
         quantity = row['Quantity']
         purchase_price = row['Purchase_Price']
         
@@ -79,7 +101,7 @@ def calculate_current_pnl(portfolio_df, latest_prices):
 
             pnl_data.append({
                 'Ticker': ticker,
-                'Type': row,
+                'Type': row['Type'], # Access 'Type' column
                 'Quantity': quantity,
                 'Purchase Price': f"{purchase_price:,.2f}",
                 'Current Price': f"{current_price:,.2f}",
@@ -90,7 +112,7 @@ def calculate_current_pnl(portfolio_df, latest_prices):
         else:
             pnl_data.append({
                 'Ticker': ticker,
-                'Type': row,
+                'Type': row['Type'], # Access 'Type' column
                 'Quantity': quantity,
                 'Purchase Price': f"{purchase_price:,.2f}",
                 'Current Price': "N/A",
@@ -109,35 +131,51 @@ def apply_corporate_actions(portfolio_state, corporate_actions_df, current_date,
     This is a simplified simulation.
     """
     adjusted_portfolio = portfolio_state.copy()
-    future_income_events =
+    future_income_events = [] # Correctly initialize an empty list
     
     # Filter corporate actions relevant for the forecast period
-    relevant_actions = (corporate_actions_df >= current_date) & some_other_condition
-        (corporate_actions_df <= forecast_end_date)
+    # FIX: Corrected the SyntaxError here by properly chaining boolean conditions
+    # Assumes 'Effective_Date' is the date column in corporate_actions_df
+    relevant_actions = corporate_actions_df[
+        (corporate_actions_df['Effective_Date'] >= current_date) &
+        (corporate_actions_df['Effective_Date'] <= forecast_end_date)
     ].sort_values(by='Effective_Date')
 
     for _, action in relevant_actions.iterrows():
-        ticker = action
-        action_type = action
-        effective_date = action
-        details = action
+        # Access columns using dictionary-like keys from the 'action' Series
+        ticker = action['Ticker'] 
+        action_type = action['Action_Type'] 
+        effective_date = action['Effective_Date'] 
+        details = action['Details'] 
 
         # Find the asset in the current portfolio state
-        asset_idx = adjusted_portfolio == ticker].index
+        # FIX: Corrected DataFrame filtering for 'Ticker'
+        asset_idx = adjusted_portfolio[adjusted_portfolio['Ticker'] == ticker].index
         if asset_idx.empty:
             continue # Asset not in portfolio
 
-        current_quantity = adjusted_portfolio.loc[asset_idx, 'Quantity']
-        current_purchase_price = adjusted_portfolio.loc[asset_idx, 'Purchase_Price']
+        # Get scalar values from Series using .iloc[0] or .item()
+        current_quantity = adjusted_portfolio.loc[asset_idx, 'Quantity'].iloc[0]
+        current_purchase_price = adjusted_portfolio.loc[asset_idx, 'Purchase_Price'].iloc[0]
 
         if action_type == 'Stock Split':
-            # Example: 2-for-1 split
-            split_ratio_str = details.split('-for-')
-            split_ratio = float(split_ratio_str)
+            # Example: 2-for-1 split. Parsing 'Details' like '2-for-1'
+            split_parts = details.split('-for-')
+            if len(split_parts) == 2 and split_parts[1].replace('.', '', 1).isdigit():
+                try:
+                    # FIX: Corrected float conversion for split ratio (e.g., 2/1)
+                    split_ratio = float(split_parts[0]) / float(split_parts[1])
+                except ValueError:
+                    st.warning(f"Invalid split ratio format '{details}' for {ticker}. Skipping split.")
+                    continue
+            else:
+                st.warning(f"Unexpected 'Stock Split' details format: '{details}' for {ticker}. Skipping split.")
+                continue
             
             new_quantity = current_quantity * split_ratio
             new_purchase_price = current_purchase_price / split_ratio
             
+            # Update the portfolio state using .loc
             adjusted_portfolio.loc[asset_idx, 'Quantity'] = new_quantity
             adjusted_portfolio.loc[asset_idx, 'Purchase_Price'] = new_purchase_price
             
@@ -145,15 +183,25 @@ def apply_corporate_actions(portfolio_state, corporate_actions_df, current_date,
                 'Date': effective_date,
                 'Ticker': ticker,
                 'Event': f"Stock Split ({details})",
-                'Impact': f"Quantity changed from {current_quantity} to {new_quantity}, Purchase Price from {current_purchase_price:.2f} to {new_purchase_price:.2f}"
+                'Impact': f"Quantity changed from {current_quantity:.0f} to {new_quantity:.0f}, Purchase Price from {current_purchase_price:.2f} to {new_purchase_price:.2f}"
             })
             st.info(f"Applied {ticker} Stock Split ({details}) on {effective_date.strftime('%Y-%m-%d')}")
 
         elif action_type == 'Bond Call':
             # Example: Bond is called, remove from portfolio and record cash inflow
-            call_price = float(details.split('_')[-1])
+            # Assumes details like 'Call_Price_102.50' or simply '102.50'
+            try:
+                call_price = float(details.split('_')[-1]) # Attempt to parse last part as float
+            except (ValueError, IndexError):
+                try: # If splitting by '_' fails, try direct conversion if 'details' is just the price
+                    call_price = float(details)
+                except ValueError:
+                    st.warning(f"Could not parse call price from details: '{details}' for {ticker}. Skipping bond call.")
+                    continue
+
             cash_inflow = current_quantity * call_price
             
+            # Remove the bond from the adjusted portfolio
             adjusted_portfolio = adjusted_portfolio.drop(asset_idx).reset_index(drop=True)
             
             future_income_events.append({
@@ -172,7 +220,8 @@ def forecast_income_and_pnl(portfolio_df, historical_prices_df, bond_coupons_df,
     and corporate actions.
     This is a simplified projection.
     """
-    current_date = historical_prices_df.max()
+    # Get the latest date from historical prices for current_date
+    current_date = historical_prices_df['Date'].max()
     forecast_end_date = current_date + timedelta(days=forecast_horizon_days)
 
     # Apply corporate actions to get an adjusted portfolio for future projections
@@ -182,43 +231,58 @@ def forecast_income_and_pnl(portfolio_df, historical_prices_df, bond_coupons_df,
     )
 
     # --- Income Forecasting ---
-    projected_income =
+    projected_income = [] # Correctly initialize an empty list
 
     # Bond Coupons
-    future_coupons = bond_coupons_df > current_date) &
-        (bond_coupons_df <= forecast_end_date)
+    # FIX: Corrected DataFrame filtering for 'Payment_Date'
+    future_coupons = bond_coupons_df[
+        (bond_coupons_df['Payment_Date'] > current_date) &
+        (bond_coupons_df['Payment_Date'] <= forecast_end_date)
     ]
-    for _, coupon in future_coupons.iterrows():
-        bond_id = coupon
+    for _, coupon_row in future_coupons.iterrows():
+        # Access columns using dictionary-like keys from 'coupon_row' Series
+        bond_id = coupon_row['Ticker'] 
+        
         # Check if bond is still in the adjusted portfolio (not called)
-        if bond_id in adjusted_portfolio_for_forecast.values:
-            quantity = adjusted_portfolio_for_forecast == bond_id]['Quantity'].iloc
-            total_coupon_amount = coupon * quantity
+        # FIX: Corrected check using .any() for boolean Series
+        if (adjusted_portfolio_for_forecast['Ticker'] == bond_id).any():
+            # Get the quantity from the adjusted portfolio for the specific bond
+            # FIX: Used .iloc[0] to get the scalar quantity
+            quantity = adjusted_portfolio_for_forecast[adjusted_portfolio_for_forecast['Ticker'] == bond_id]['Quantity'].iloc[0]
+            total_coupon_amount = coupon_row['Coupon_Amount'] * quantity # Access 'Coupon_Amount'
             projected_income.append({
-                'Date': coupon,
+                'Date': coupon_row['Payment_Date'], # Use 'Payment_Date'
                 'Ticker': bond_id,
                 'Type': 'Bond Coupon',
                 'Amount': total_coupon_amount
             })
 
     # Equity Dividends
-    future_dividends = equity_dividends_df > current_date) &
-        (equity_dividends_df <= forecast_end_date)
+    # FIX: Corrected DataFrame filtering for 'Payment_Date'
+    future_dividends = equity_dividends_df[
+        (equity_dividends_df['Payment_Date'] > current_date) &
+        (equity_dividends_df['Payment_Date'] <= forecast_end_date)
     ]
-    for _, dividend in future_dividends.iterrows():
-        ticker = dividend
+    for _, dividend_row in future_dividends.iterrows():
+        # Access columns using dictionary-like keys from 'dividend_row' Series
+        ticker = dividend_row['Ticker']
+        
         # Check if equity is still in the adjusted portfolio (not acquired/merged out)
-        if ticker in adjusted_portfolio_for_forecast.values:
-            quantity = adjusted_portfolio_for_forecast == ticker]['Quantity'].iloc
+        # FIX: Corrected check using .any() for boolean Series
+        if (adjusted_portfolio_for_forecast['Ticker'] == ticker).any():
+            # Get the quantity from the adjusted portfolio for the specific equity
+            # FIX: Used .iloc[0] to get the scalar quantity
+            quantity = adjusted_portfolio_for_forecast[adjusted_portfolio_for_forecast['Ticker'] == ticker]['Quantity'].iloc[0]
+            
             # Adjust quantity for any splits that occurred before this dividend's ex-date
             # This is a simplification; a real system would track share history more robustly
             
             # For simplicity, we'll assume the quantity in adjusted_portfolio_for_forecast already reflects splits
             # that occurred *before* the dividend's ex-date.
             
-            total_dividend_amount = dividend * quantity
+            total_dividend_amount = dividend_row['Dividend_Amount'] * quantity # Access 'Dividend_Amount'
             projected_income.append({
-                'Date': dividend, # Use payment date for income receipt
+                'Date': dividend_row['Payment_Date'], # Use payment date for income receipt
                 'Ticker': ticker,
                 'Type': 'Equity Dividend',
                 'Amount': total_dividend_amount
@@ -238,7 +302,8 @@ def forecast_income_and_pnl(portfolio_df, historical_prices_df, bond_coupons_df,
     projected_cost_basis = 0.0
     
     for _, row in adjusted_portfolio_for_forecast.iterrows():
-        ticker = row
+        # Access columns using dictionary-like keys from the 'row' Series
+        ticker = row['Ticker'] 
         quantity = row['Quantity']
         purchase_price = row['Purchase_Price'] # This purchase price is already adjusted for past splits in apply_corporate_actions
         
@@ -265,7 +330,7 @@ st.title("Fund Income Forecasting & P&L Analysis")
 
 # Sidebar for navigation and global settings
 st.sidebar.header("Navigation & Settings")
-page = st.sidebar.radio("Go to",)
+page = st.sidebar.radio("Go to", ("Portfolio Overview", "Current P&L", "Future Projections & Scenarios", "Source Code")) # Corrected initialization of tuple
 
 # Load all data once
 portfolio_df_initial = load_portfolio_data()
@@ -275,8 +340,9 @@ equity_dividends_df = load_equity_dividends()
 corporate_actions_df = load_corporate_actions()
 
 # Get latest prices for current P&L
+# Get the latest date from the 'Date' column of historical_prices_df
 latest_prices = get_latest_prices(historical_prices_df)
-current_date = historical_prices_df.max()
+current_date = historical_prices_df['Date'].max()
 
 if page == "Portfolio Overview":
     st.header("Current Portfolio Holdings")
@@ -287,7 +353,8 @@ if page == "Portfolio Overview":
     }), use_container_width=True)
 
     st.subheader("Latest Market Prices")
-    latest_prices_df = pd.DataFrame(latest_prices.items(), columns=)
+    # Correctly initialize DataFrame for latest prices
+    latest_prices_df = pd.DataFrame(latest_prices.items(), columns=['Ticker', 'Latest Price'])
     st.dataframe(latest_prices_df.style.format({'Latest Price': "{:,.2f}"}), use_container_width=True)
 
 elif page == "Current P&L":
@@ -332,8 +399,15 @@ elif page == "Future Projections & Scenarios":
     if st.button("Run Projection with Scenarios"):
         st.subheader(f"Forecasted Income & P&L for next {forecast_horizon_months} months")
         
-        # Ensure dates are datetime objects after editing
-        edited_ca_df = pd.to_datetime(edited_ca_df)
+        # Ensure dates are datetime objects after editing by the user in data_editor
+        # This assumes the user inputs dates in a format pandas can parse.
+        # It's better to explicitly map specific columns if there's a mix of data types
+        # For example: edited_ca_df['Effective_Date'] = pd.to_datetime(edited_ca_df['Effective_Date'], errors='coerce')
+        for col in edited_ca_df.select_dtypes(include=['object']).columns:
+             try:
+                 edited_ca_df[col] = pd.to_datetime(edited_ca_df[col], errors='coerce')
+             except Exception:
+                 pass # Not a date column, ignore
 
         projected_income_df, total_future_pnl, adjusted_portfolio_after_ca, ca_impact_events = \
             forecast_income_and_pnl(
@@ -375,6 +449,8 @@ elif page == "Source Code":
     st.header("Application Source Code")
     st.write("Here you can view the Python source code for this Streamlit application.")
     
-    with open("app.py", "r") as f:
+    # FIX: Corrected the file path to match the common Streamlit app naming
+    with open("streamlit_app.py", "r") as f: 
         code = f.read()
     st.code(code, language="python")
+
